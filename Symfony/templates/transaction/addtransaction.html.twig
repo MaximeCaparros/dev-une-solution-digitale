@@ -1,0 +1,42 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Hello TransactionController!{% endblock %}
+        
+
+
+{% block body %}
+
+
+	<div class="container">
+		<div class="row  justify-content-center align-items-center">
+			<div class="col-md-4">
+				<div class="card  mb-3 mt-3 "style="background-color: #100f0f; color: #efefef">
+					<div class="card-body">
+						<div class="card-header mb-3"><b>Ajout de Transaction</b></div>
+                        <form action="{{ path ('addtransaction',) }}" method="post">
+                            <div class="col-xs-6">
+                                <label>Crypto</label><br>
+                                <select  id="choixCrypto" name="choixCrypto" required >
+                                    <option disabled value="">Selectionnez une Cryto</option>
+                                {% for crypto in allCrypto %}
+                                    <option value="{{ crypto[1] }}:{{ crypto[3] }}" id="{{ crypto[0] }}" >{{ crypto[1] }} : {{ crypto[3] }}</option>
+                                {% endfor %}
+                                </select>
+                            </div><br> 
+
+                            <div class="col-xs-6">    
+                                <label>Quantité</label><br>
+                                <input type="number" id="quantity" name="quantity" placeholder="1.1234"  min="0" step="0.0001" required onkeydown="if(event.keyCode==32) return false;"><br>
+                            </div>
+                                <td><button type="submit" id="result" class="btn btn-primary">Ajouter</button></td>
+                        </form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+{% endblock %}
+
+
+
