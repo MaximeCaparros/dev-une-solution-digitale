@@ -1,7 +1,9 @@
                         {% extends 'base.html.twig' %}
 
 {% block title %}Hello TransactionController!{% endblock %}
-        
+        {% block stylesheets %}
+
+        {% endblock %}
 
 
 {% block body %}
@@ -28,7 +30,7 @@
                                     </th>
                                 </tr>
                             </thead>
-                                {% for transaction in alltransaction %}
+                                 {% for transaction in alltransaction %}
                                     {% if transaction.solded == 0 %}
                                         <tr>
                                             <td>{{transaction.name}}</td>
@@ -73,7 +75,7 @@
                                                     Vendre
                                                 </a>
                                         </tr>
-                                   {% endif %} 
+                                   {% endif %}
                                 {% endfor %}
                             </table >
                         </div>
@@ -87,7 +89,7 @@
                                     <th scope="col">Bénéfice</th>
                                 </tr>
                             </thead>
-                                {% for transaction in alltransaction %}
+                               {% for transaction in alltransaction %}
                                     {% if transaction.solded == 1 %}
                                         <tr>
                                             <td>{{transaction.name}}</td>

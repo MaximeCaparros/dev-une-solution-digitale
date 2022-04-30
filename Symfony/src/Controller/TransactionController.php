@@ -25,25 +25,72 @@ class TransactionController extends AbstractController
 
 
         $crypto = $this->recupData();
+        if (getenv('JAWSDB_URL') !== false) {
+            $url = getenv('JAWSDB_URL');
+            $dbparts = parse_url($url);
 
-        if (!empty($_POST)){
-            $split=explode(':',$requete->request->get('choixCrypto'));
+            $hostname = $dbparts['host'];
+            $username = $dbparts['user'];
+            $password = $dbparts['pass'];
+            $database = ltrim($dbparts['path'],'/');
+            try {
+                $conn = new \PDO("mysql:host=$hostname;dbname=$database", $username, $password);
+                // set the PDO error mode to exception
+                $conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
-          $this->entityManager = $doctrine->getManager();
-            $transaction = new Transactions();
+
+                if (!empty($_POST)){
+
+                    $split=explode(':',$requete->request->get('choixCrypto'));
+
+                    $req=$conn->prepare(
+                        'Insert into transactions(name,price,quantity,created_at,solded)
+                                values(:name,:price,:quantity,:createdAt,:solded)');
+                    $transaction = new Transactions();
 
 
-            $transaction->setName($split[0])
-                ->setPrice($split[1])
-                ->setQuantity($requete->request->get('quantity'))
-                ->setCreatedAt(new \DateTime())
-                ->setSolded(false);
-            $this->entityManager->persist($transaction);
-            $this->entityManager->flush();
+                    $transaction->setName($split[0])
+                        ->setPrice($split[1])
+                        ->setQuantity($requete->request->get('quantity'));
+                   $req->execute([
+                      'name' =>$transaction->getName(),
+                       'price' => $transaction->getPrice(),
+                       'quantity'=>$transaction->getQuantity(),
+                       'createdAt'=>date_format(new \DateTime(),'Y-m-d h:i:s'),
+                       'solded'=>0,
+                   ]);
 
-            return $this->redirectToRoute('transaction_liste');
+                    return $this->redirectToRoute('transaction_liste');
 
+                }
+
+
+            } catch(\PDOException $e)
+            {
+                echo "Connection failed: " . $e->getMessage();
+            }
+        }else{
+            echo ('crotesqd');
+            if (!empty($_POST)){
+                $split=explode(':',$requete->request->get('choixCrypto'));
+
+                $this->entityManager = $doctrine->getManager();
+                $transaction = new Transactions();
+
+
+                $transaction->setName($split[0])
+                    ->setPrice($split[1])
+                    ->setQuantity($requete->request->get('quantity'))
+                    ->setCreatedAt(new \DateTime())
+                    ->setSolded(false);
+                $this->entityManager->persist($transaction);
+                $this->entityManager->flush();
+
+                return $this->redirectToRoute('transaction_liste');
+
+            }
         }
+
 
 
 
@@ -62,12 +109,45 @@ class TransactionController extends AbstractController
 
         $crypto = $this->recupData();
 
+        if (getenv('JAWSDB_URL') !== false) {
+            $url = getenv('JAWSDB_URL');
+            $dbparts = parse_url($url);
+
+            $hostname = $dbparts['host'];
+            $username = $dbparts['user'];
+            $password = $dbparts['pass'];
+            $database = ltrim($dbparts['path'],'/');
+            try {
+                $conn = new \PDO("mysql:host=$hostname;dbname=$database", $username, $password);
+                // set the PDO error mode to exception
+                $conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $req=$conn->prepare('Select * from transactions');
+                $req->execute();
+                $alltransaction=$req->fetchAll();
+                if(count($alltransaction)>0) {
+                    $count=0;
+                     foreach ($alltransaction as $transactions){
+                         $transactions['created_at']=new \DateTime($transactions['created_at']);
+                         $transactions['solded_at']=new \DateTime($transactions['solded_at']);
+                         $transa[$count]=$transactions;
+                         $count++;
+
+                     }
+                }
+
+            }catch (\PDOException $e){
+                echo "Connection failed: " . $e->getMessage();
+            }
+        }else{
+            $em = $doctrine->getManager();
+            $transa = $doctrine->getRepository(Transactions::class)->findAll();
+        }
 
 
-        $alltransaction = $doctrine->getRepository(Transactions::class)->findAll();
+
         return $this->render('transaction/transaction.html.twig', [
             'allCrypto'=> $crypto,
-            'alltransaction' => $alltransaction,
+            'alltransaction' => $transa,
         ]);
 
     }
@@ -75,47 +155,93 @@ class TransactionController extends AbstractController
     /**
      * @Route("/transaction/addvente/{id}/{name}", name="add_vente", requirements={"id"="\d+"}))
      */
-    public function transaction(Transactions $id,string $name, Request $requete,ManagerRegistry $doctrine){
+    public function transaction(int $id,string $name, Request $requete,ManagerRegistry $doctrine){
 
         $crypto = $this->recupData();
+        if (getenv('JAWSDB_URL') !== false) {
+            $url = getenv('JAWSDB_URL');
+            $dbparts = parse_url($url);
 
-        $em = $doctrine->getManager();
+            $hostname = $dbparts['host'];
+            $username = $dbparts['user'];
+            $password = $dbparts['pass'];
+            $database = ltrim($dbparts['path'],'/');
+            try {
+                $conn = new \PDO("mysql:host=$hostname;dbname=$database", $username, $password);
+                // set the PDO error mode to exception
+                $conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+                $req=$conn->prepare('Select * from transactions where id=:id');
+                $req->execute([
+                    'id'=>$id,
+                ]);
 
-        $venteId = $em->getRepository(Transactions::class)->find($id);
+                $venteId=$req->fetch();
+                if(empty($venteId)) {
+                    throw $this->createNotFoundException(
+                        'Pas de transaction pour cette crypto : ' . $id
+                    );
+                }
+                if (!empty($_POST))
+                {
+                    $priceAchat = $requete->request->get('prixAchat');
+                    $priceVente = $requete->request->get('prixVente');
+                    $quantity = $requete->request->get('quantity');
+
+                    $benefice = (($priceVente - $priceAchat) * $quantity);
+                    $req=$conn->prepare('update transactions set solded = 1,benefit=:benefit,solded_at=:solded_at where id=:id');
+                    $req->execute([
+                        'benefit'=>$benefice,
+                        'solded_at'=> date_format(new \DateTime(),'Y-m-d h:i:s'),
+                       'id' =>$id,
+                    ]);
+                    return $this->redirectToRoute('transaction_liste');
+
+                }
+
+            }catch (\PDOException $e){
+                echo "Connection failed: " . $e->getMessage();
+            }
+        }else{
+            $em = $doctrine->getManager();
+            $venteId = $em->getRepository(Transactions::class)->find($id);
+            if (!$venteId) {
+                throw $this->createNotFoundException(
+                    'Pas de transaction pour cette crypto : '.$id
+                );
+            }
+            if (!empty($_POST)){
+                $priceAchat = $requete->request->get('prixAchat');
+                $priceVente = $requete->request->get('prixVente');
+                $quantity = $requete->request->get('quantity');
+
+                $benefice = (($priceVente - $priceAchat) * $quantity);
+
+                $venteId->setSolded(true)
+                    ->setBenefit($benefice)
+                    ->setSoldedAt(new \DateTime());
+
+                $em->persist($venteId);
+                $em->flush();
 
 
+                return $this->redirectToRoute('transaction_liste');
 
 
-
-
-        if (!$venteId) {
-            throw $this->createNotFoundException(
-                'Pas de transaction pour cette crypto : '.$id
-            );
+            }
         }
-        if (!empty($_POST)){
-            $priceAchat = $requete->request->get('prixAchat');
-            $priceVente = $requete->request->get('prixVente');
-            $quantity = $requete->request->get('quantity');
-
-            $benefice = (($priceVente - $priceAchat) * $quantity);
-
-            $venteId->setSolded(true)
-                ->setBenefit($benefice)
-                ->setSoldedAt(new \DateTime());
-
-            $em->persist($venteId);
-            $em->flush();
 
 
-            return $this->redirectToRoute('transaction_liste');
 
 
-        }
+
+
+
+
+
         $cryp = $this->searchKey($name);
 
         return $this->render('transaction/addvente.html.twig', [
-            "TransactionID"=> $id,
+            "TransactionID"=> $venteId,
             "crypto" =>$cryp,
         ]);
     }

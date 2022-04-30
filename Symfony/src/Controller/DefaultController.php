@@ -6,14 +6,12 @@ namespace App\Controller;
 use App\Entity\Rentabilite;
 use App\Entity\Transactions;
 use Doctrine\Persistence\ManagerRegistry;
-use phpDocumentor\Reflection\Types\Array_;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Validator\Constraints\Date;
 use Symfony\UX\Chartjs\Builder\ChartBuilderInterface;
 use Symfony\UX\Chartjs\Model\Chart;
-use function Sodium\add;
+
 
 class DefaultController extends AbstractController
 {
@@ -23,11 +21,82 @@ class DefaultController extends AbstractController
      */
     public function index(ManagerRegistry $doctrine): Response
     {
+
         $crypto = $this->recupData();
-        $em = $doctrine->getManager();
-        $venteId = $em->getRepository(Transactions::class)->findAll();
         $somme=0;
-        if ($venteId) {
+        if (getenv('JAWSDB_URL') !== false) {
+            $url = getenv('JAWSDB_URL');
+            $dbparts = parse_url($url);
+
+            $hostname = $dbparts['host'];
+            $username = $dbparts['user'];
+            $password = $dbparts['pass'];
+            $database = ltrim($dbparts['path'],'/');
+            try {
+                $conn = new \PDO("mysql:host=$hostname;dbname=$database", $username, $password);
+                // set the PDO error mode to exception
+                $conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+                $request=$conn->prepare("SELECT * from transactions");
+                $request->execute();
+                $venteId = $request->fetchAll();
+
+                if(count($venteId) > 0) {
+
+                    foreach ($venteId as $vente) {
+                        if (!$vente["solded"]) {
+                            foreach ($crypto as $crypt) {
+                                if ($crypt[1] == $vente["name"]) {
+                                    $somme += ($vente["price"] - $crypt[3]) * $vente["quantity"];
+                                }
+                            }
+
+                        }
+                    }
+                }
+                $request=$conn->prepare("Select * from rentabilite where date= :date");
+                $request->execute([
+                    "date" => date_format(new \DateTime(),'Y-m-d'),
+                ]);
+
+                $rentadujour=$request->fetchAll();
+                if(count($rentadujour)>0){
+
+                    if($rentadujour["benefice"] <> $somme ){
+                        $request = $conn->prepare("Update rentabilite set date=:date, benefice = :benefice where id= :id");
+                        $request->execute([
+                            'date' => date_format(new \DateTime(),'Y-m-d'),
+                            'benefice' => $somme,
+                            'id' => $rentadujour['id'],
+                        ]);
+
+                    }else
+                    {
+
+                        return $this->render('default/index.html.twig', [
+                            'allCrypto'=> $crypto,
+                            'somme'=>$somme,
+
+                        ]);
+                    }
+                }
+                else
+                {
+                    $request = $conn->prepare("Insert into rentabilite(date,benefice) values (:date,:benefice)");
+                    $request->execute([
+                        "date" => date_format(new \DateTime(),'Y-m-d'),
+                        'benefice' => $somme,
+                    ]);
+                }
+            } catch(\PDOException $e)
+            {
+                echo "Connection failed: " . $e->getMessage();
+            }
+        }else
+        {
+            $em = $doctrine->getManager();
+            $venteId = $em->getRepository(Transactions::class)->findAll();
+            if ($venteId) {
 
             foreach ($venteId as $vente){
                 if(!$vente->getsolded()){
@@ -42,31 +111,37 @@ class DefaultController extends AbstractController
 
         }
 
-        $renta = new Rentabilite();
-        $rentadujour = $em->getRepository(Rentabilite::class)->findOneBySomeDate( new \DateTime());
+            $renta = new Rentabilite();
+            $rentadujour = $em->getRepository(Rentabilite::class)->findOneBySomeDate( new \DateTime());
 
-        if($rentadujour){
-            if($rentadujour->getBenefice() <> $somme ){
-                $rentadujour->setBenefice($somme);
-                $rentadujour->setDate(new \DateTime());
-                $em->persist($rentadujour);
-                $em->flush();
-            }else
+            if($rentadujour){
+                if($rentadujour->getBenefice() <> $somme ){
+                    $rentadujour->setBenefice($somme);
+                    $rentadujour->setDate(new \DateTime());
+                    $em->persist($rentadujour);
+                    $em->flush();
+                }else
+                {
+                    return $this->render('default/index.html.twig', [
+                        'allCrypto'=> $crypto,
+                        'somme'=>$somme,
+
+                    ]);
+                }
+            }
+            else
             {
-                return $this->render('default/index.html.twig', [
-                    'allCrypto'=> $crypto,
-                    'somme'=>$somme,
-
-                ]);
+                $renta->setDate(new \DateTime())
+                    ->setBenefice($somme);
+                $em->persist($renta);
+                $em->flush();
             }
         }
-        else
-        {
-            $renta->setDate(new \DateTime())
-                ->setBenefice($somme);
-            $em->persist($renta);
-            $em->flush();
-        }
+
+
+
+
+
 
       return $this->render('default/index.html.twig', [
             'allCrypto'=> $crypto,
@@ -81,19 +156,56 @@ class DefaultController extends AbstractController
      */
    public function graph(ManagerRegistry $doctrine, ChartBuilderInterface $chartBuilder)
     {
-        $em = $doctrine->getManager();
-        $rentadujour = $em->getRepository(Rentabilite::class)->findAll();
+
         $date= [];
         $benef=  [];
         $count=0;
-        if ($rentadujour){
-            foreach ($rentadujour as $renta) {
-                $date[$count]= date_format($renta->getDate(),'Y-m-d');
-                $benef[$count]= $renta->getBenefice();
-                $count++;
-            }
+        if (getenv('JAWSDB_URL') !== false) {
+            $url = getenv('JAWSDB_URL');
+            $dbparts = parse_url($url);
 
+            $hostname = $dbparts['host'];
+            $username = $dbparts['user'];
+            $password = $dbparts['pass'];
+            $database = ltrim($dbparts['path'],'/');
+            try {
+                $conn = new \PDO("mysql:host=$hostname;dbname=$database", $username, $password);
+                // set the PDO error mode to exception
+                $conn->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+
+                $request=$conn->prepare("Select * from rentabilite");
+                $request->execute();
+                $rentadujour=$request->fetchAll();
+                if(count($rentadujour)>0){
+                   foreach ($rentadujour as $renta) {
+                        $date[$count]= $renta['date'];
+                        $benef[$count]= $renta['benefice'];
+                        $count++;
+                    }
+                }
+
+
+            } catch(\PDOException $e)
+            {
+                echo "Connection failed: " . $e->getMessage();
+            }
+        }else
+        {
+            $em = $doctrine->getManager();
+            $rentadujour = $em->getRepository(Rentabilite::class)->findAll();
+
+            if ($rentadujour){
+                foreach ($rentadujour as $renta) {
+                    $date[$count]= date_format($renta->getDate(),'Y-m-d');
+                    $benef[$count]= $renta->getBenefice();
+                    $count++;
+                }
+
+            }
         }
+
+
 
 
         $chart = $chartBuilder->createChart(Chart::TYPE_LINE);
